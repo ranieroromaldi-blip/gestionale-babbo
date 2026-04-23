@@ -1,12 +1,12 @@
 import streamlit as st
 import sqlite3
 import hashlib
-from datetime import datetime
+from datetime import datetime, date
 
 from database import init_db, get_connection, hash_password
 
 # =========================
-# DB INIT
+# DB
 # =========================
 init_db()
 conn = get_connection()
@@ -52,7 +52,7 @@ if "user" not in st.session_state:
 st.sidebar.title("Menu")
 menu = st.sidebar.radio(
     "Sezione",
-    ["Dashboard", "Clienti", "Interventi", "Guadagni"]
+    ["Dashboard", "Clienti", "Interventi", "Calendario"]
 )
 
 if st.sidebar.button("Logout"):
@@ -76,7 +76,7 @@ if menu == "Dashboard":
 
     st.metric("👤 Clienti", clienti)
     st.metric("🛠 Interventi", interventi)
-    st.metric("💰 Guadagni totali", f"€ {guadagni}")
+    st.metric("💰 Guadagni", f"€ {guadagni}")
 
 # =========================
 # CLIENTI
@@ -102,7 +102,7 @@ elif menu == "Clienti":
         st.write(f"{cl[0]} - {cl[1]} - {cl[2]}")
 
 # =========================
-# INTERVENTI CON SOLDI REALI
+# INTERVENTI
 # =========================
 elif menu == "Interventi":
 
@@ -111,15 +111,13 @@ elif menu == "Interventi":
 
     cliente = st.selectbox("Cliente", clienti if clienti else ["Nessuno"])
     desc = st.text_area("Descrizione")
-    data = st.date_input("Data")
+    data = st.date_input("Data intervento")
     stato = st.selectbox("Stato", ["Da fare", "Completato"])
 
     manodopera = st.number_input("Manodopera €", min_value=0.0)
     materiale = st.number_input("Materiale €", min_value=0.0)
 
     totale = manodopera + materiale
-
-    st.write(f"💰 Totale: € {totale}")
 
     if st.button("Salva intervento"):
         c.execute("""
@@ -132,25 +130,51 @@ elif menu == "Interventi":
         st.success("Salvato")
 
 # =========================
-# GUADAGNI REALI
+# CALENDARIO LAVORI
 # =========================
-elif menu == "Guadagni":
+elif menu == "Calendario":
 
-    st.subheader("💰 Guadagni reali")
+    st.subheader("📅 Calendario lavori")
 
-    c.execute("SELECT SUM(totale) FROM interventi WHERE stato='Completato'")
-    totale = c.fetchone()[0] or 0
+    oggi = date.today()
 
-    st.metric("💰 Totale incassato", f"€ {totale}")
+    tab1, tab2, tab3 = st.tabs(["📍 Oggi", "📆 Prossimi lavori", "📋 Tutti"])
 
-    c.execute("""
-        SELECT cliente, totale, data 
-        FROM interventi 
-        WHERE stato='Completato'
-        ORDER BY data DESC
-    """)
+    # ================= OGGI =================
+    with tab1:
+        c.execute("""
+            SELECT cliente, descrizione, data, stato
+            FROM interventi
+            WHERE data = ?
+        """, (str(oggi),))
 
-    st.write("📊 Ultimi guadagni:")
+        lavori = c.fetchall()
 
-    for i in c.fetchall():
-        st.write(f"{i[2]} | {i[0]} | € {i[1]}")
+        if not lavori:
+            st.info("Nessun lavoro oggi")
+        else:
+            for l in lavori:
+                st.write(f"👤 {l[0]} | 🛠 {l[1]} | 📌 {l[3]}")
+
+    # ================= PROSSIMI =================
+    with tab2:
+        c.execute("""
+            SELECT cliente, descrizione, data, stato
+            FROM interventi
+            WHERE data > ?
+            ORDER BY data ASC
+        """, (str(oggi),))
+
+        for l in c.fetchall():
+            st.write(f"📅 {l[2]} | 👤 {l[0]} | 🛠 {l[1]} | 📌 {l[3]}")
+
+    # ================= TUTTI =================
+    with tab3:
+        c.execute("""
+            SELECT cliente, descrizione, data, stato
+            FROM interventi
+            ORDER BY data DESC
+        """)
+
+        for l in c.fetchall():
+            st.write(f"{l[2]} | {l[0]} | {l[1]} | {l[3]}")
