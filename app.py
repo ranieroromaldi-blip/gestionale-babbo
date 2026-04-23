@@ -1,16 +1,12 @@
 import streamlit as st
 import sqlite3
-import io
 import hashlib
 from datetime import datetime
-
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
 
 from database import init_db, get_connection, hash_password
 
 # =========================
-# DB
+# DB INIT
 # =========================
 init_db()
 conn = get_connection()
@@ -69,26 +65,23 @@ st.title("🏠 Gestionale Portoni Garage")
 # DASHBOARD
 # =========================
 if menu == "Dashboard":
-    st.subheader("📊 Riepilogo")
-
     c.execute("SELECT COUNT(*) FROM clienti")
     clienti = c.fetchone()[0]
 
     c.execute("SELECT COUNT(*) FROM interventi")
     interventi = c.fetchone()[0]
 
-    c.execute("SELECT COUNT(*) FROM interventi WHERE stato='Completato'")
-    completati = c.fetchone()[0]
+    c.execute("SELECT SUM(totale) FROM interventi WHERE stato='Completato'")
+    guadagni = c.fetchone()[0] or 0
 
-    st.write(f"👤 Clienti: {clienti}")
-    st.write(f"🛠 Interventi: {interventi}")
-    st.write(f"✅ Completati: {completati}")
+    st.metric("👤 Clienti", clienti)
+    st.metric("🛠 Interventi", interventi)
+    st.metric("💰 Guadagni totali", f"€ {guadagni}")
 
 # =========================
 # CLIENTI
 # =========================
 elif menu == "Clienti":
-    st.subheader("👤 Clienti")
 
     nome = st.text_input("Nome")
     tel = st.text_input("Telefono")
@@ -109,10 +102,9 @@ elif menu == "Clienti":
         st.write(f"{cl[0]} - {cl[1]} - {cl[2]}")
 
 # =========================
-# INTERVENTI (CON SOLDI)
+# INTERVENTI CON SOLDI REALI
 # =========================
 elif menu == "Interventi":
-    st.subheader("🛠 Interventi")
 
     c.execute("SELECT nome FROM clienti")
     clienti = [x[0] for x in c.fetchall()]
@@ -122,33 +114,43 @@ elif menu == "Interventi":
     data = st.date_input("Data")
     stato = st.selectbox("Stato", ["Da fare", "Completato"])
 
-    manodopera = st.number_input("💰 Manodopera (€)", min_value=0.0)
-    materiale = st.number_input("🧱 Materiale (€)", min_value=0.0)
+    manodopera = st.number_input("Manodopera €", min_value=0.0)
+    materiale = st.number_input("Materiale €", min_value=0.0)
 
     totale = manodopera + materiale
-    st.write(f"👉 Totale intervento: € {totale}")
+
+    st.write(f"💰 Totale: € {totale}")
 
     if st.button("Salva intervento"):
         c.execute("""
-            INSERT INTO interventi (cliente, descrizione, data, stato)
-            VALUES (?, ?, ?, ?)
-        """, (cliente, desc, str(data), stato))
+            INSERT INTO interventi 
+            (cliente, descrizione, data, stato, manodopera, materiale, totale)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (cliente, desc, str(data), stato, manodopera, materiale, totale))
 
         conn.commit()
-        st.success("Intervento salvato")
+        st.success("Salvato")
 
 # =========================
 # GUADAGNI REALI
 # =========================
 elif menu == "Guadagni":
+
     st.subheader("💰 Guadagni reali")
 
-    # NOTA: versione base → simuliamo struttura
-    # (prossimo step: salviamo soldi nel DB interventi)
+    c.execute("SELECT SUM(totale) FROM interventi WHERE stato='Completato'")
+    totale = c.fetchone()[0] or 0
 
-    c.execute("SELECT COUNT(*) FROM interventi WHERE stato='Completato'")
-    completati = c.fetchone()[0]
+    st.metric("💰 Totale incassato", f"€ {totale}")
 
-    st.metric("Interventi completati", completati)
+    c.execute("""
+        SELECT cliente, totale, data 
+        FROM interventi 
+        WHERE stato='Completato'
+        ORDER BY data DESC
+    """)
 
-    st.info("Nel prossimo step colleghiamo i prezzi al database per avere guadagni reali mensili.")
+    st.write("📊 Ultimi guadagni:")
+
+    for i in c.fetchall():
+        st.write(f"{i[2]} | {i[0]} | € {i[1]}")
