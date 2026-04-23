@@ -1,10 +1,71 @@
 import streamlit as st
-from database import init_db, get_connection
+import sqlite3
+import io
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+
+# =========================
+# DATABASE
+# =========================
+def get_connection():
+    return sqlite3.connect("gestionale.db", check_same_thread=False)
+
+def init_db():
+    conn = get_connection()
+    c = conn.cursor()
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS clienti (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT,
+        telefono TEXT,
+        indirizzo TEXT
+    )
+    """)
+
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS interventi (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        cliente TEXT,
+        descrizione TEXT,
+        data TEXT,
+        stato TEXT
+    )
+    """)
+
+    conn.commit()
+    conn.close()
 
 init_db()
 conn = get_connection()
 c = conn.cursor()
 
+# =========================
+# PDF FUNCTION
+# =========================
+def crea_pdf(cliente, descrizione, data):
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+
+    pdf.setFont("Helvetica-Bold", 16)
+    pdf.drawString(50, 800, "PREVENTIVO PORTONI GARAGE")
+
+    pdf.setFont("Helvetica", 12)
+    pdf.drawString(50, 760, f"Cliente: {cliente}")
+    pdf.drawString(50, 740, f"Data: {data}")
+
+    pdf.drawString(50, 710, "Descrizione lavoro:")
+    text = pdf.beginText(50, 690)
+    text.textLines(descrizione)
+    pdf.drawText(text)
+
+    pdf.save()
+    buffer.seek(0)
+    return buffer
+
+# =========================
+# UI
+# =========================
 st.title("🏠 Gestionale Portoni Garage")
 
 # =========================
@@ -27,18 +88,11 @@ if st.button("➕ Aggiungi cliente"):
 
 st.subheader("Lista clienti")
 
-c.execute("SELECT id, nome, telefono, indirizzo FROM clienti")
+c.execute("SELECT nome, telefono, indirizzo FROM clienti")
 clienti = c.fetchall()
 
 for cl in clienti:
-    col1, col2 = st.columns([4,1])
-    with col1:
-        st.write(f"👤 {cl[1]} - 📞 {cl[2]} - 📍 {cl[3]}")
-    with col2:
-        if st.button("🗑", key=f"del_cli_{cl[0]}"):
-            c.execute("DELETE FROM clienti WHERE id=?", (cl[0],))
-            conn.commit()
-            st.rerun()
+    st.write(f"👤 {cl[0]} - 📞 {cl[1]} - 📍 {cl[2]}")
 
 st.divider()
 
@@ -52,7 +106,7 @@ clienti_nomi = [x[0] for x in c.fetchall()]
 
 cliente = st.selectbox("Cliente", clienti_nomi if clienti_nomi else ["Nessun cliente"])
 descrizione = st.text_area("Descrizione intervento")
-data = st.date_input("Data")
+data = st.date_input("Data intervento")
 stato = st.selectbox("Stato", ["Da fare", "Completato"])
 
 if st.button("➕ Aggiungi intervento"):
@@ -66,28 +120,19 @@ if st.button("➕ Aggiungi intervento"):
 
 st.subheader("Lista interventi")
 
-c.execute("SELECT id, cliente, descrizione, data, stato FROM interventi ORDER BY data")
+c.execute("SELECT cliente, descrizione, data, stato FROM interventi ORDER BY data")
 interventi = c.fetchall()
 
 for i in interventi:
-    col1, col2 = st.columns([5,1])
-
-    with col1:
-        st.write(f"👤 {i[1]}")
-        st.write(f"🛠 {i[2]}")
-        st.write(f"📅 {i[3]} | 📌 {i[4]}")
-        st.write("---")
-
-    with col2:
-        if st.button("🗑", key=f"del_int_{i[0]}"):
-            c.execute("DELETE FROM interventi WHERE id=?", (i[0],))
-            conn.commit()
-            st.rerun()
+    st.write(f"👤 {i[0]}")
+    st.write(f"🛠 {i[1]}")
+    st.write(f"📅 {i[2]} | 📌 {i[3]}")
+    st.write("---")
 
 # =========================
 # AGENDA
 # =========================
-st.header("📅 Agenda lavori (ordinati per data)")
+st.header("📅 Agenda lavori")
 
 c.execute("""
 SELECT cliente, descrizione, data, stato
@@ -99,3 +144,25 @@ agenda = c.fetchall()
 
 for a in agenda:
     st.write(f"📅 {a[2]} - 👤 {a[0]} - 🛠 {a[1]} - 📌 {a[3]}")
+
+# =========================
+# PDF PREVENTIVO
+# =========================
+st.header("📄 Preventivo PDF")
+
+cliente_pdf = st.selectbox("Cliente preventivo", clienti_nomi if clienti_nomi else ["Nessun cliente"])
+descrizione_pdf = st.text_area("Descrizione preventivo")
+data_pdf = st.date_input("Data preventivo")
+
+if st.button("📥 Genera PDF"):
+    if clienti_nomi:
+        pdf_file = crea_pdf(cliente_pdf, descrizione_pdf, str(data_pdf))
+
+        st.download_button(
+            label="⬇️ Scarica PDF",
+            data=pdf_file,
+            file_name="preventivo.pdf",
+            mime="application/pdf"
+        )
+    else:
+        st.error("Nessun cliente disponibile")
