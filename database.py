@@ -8,7 +8,6 @@ def init_db():
     conn = get_connection()
     c = conn.cursor()
 
-    # CLIENTI
     c.execute("""
     CREATE TABLE IF NOT EXISTS clienti (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -18,7 +17,6 @@ def init_db():
     )
     """)
 
-    # INTERVENTI CON SOLDI VERI
     c.execute("""
     CREATE TABLE IF NOT EXISTS interventi (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,7 +30,18 @@ def init_db():
     )
     """)
 
-    # UTENTI LOGIN
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS fatture (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        numero TEXT,
+        cliente TEXT,
+        data TEXT,
+        imponibile REAL,
+        iva REAL,
+        totale REAL
+    )
+    """)
+
     c.execute("""
     CREATE TABLE IF NOT EXISTS utenti (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
