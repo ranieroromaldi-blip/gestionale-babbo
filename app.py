@@ -6,9 +6,13 @@ from datetime import date
 from database import init_db, get_connection, hash_password
 
 # =========================
-# UI CONFIG
+# CONFIG APP
 # =========================
-st.set_page_config(page_title="Gestionale Portoni", layout="wide")
+st.set_page_config(
+    page_title="Gestionale C.R. Montaggi",
+    page_icon="🏢",
+    layout="wide"
+)
 
 # =========================
 # DB
@@ -36,7 +40,8 @@ if not c.fetchone():
     conn.commit()
 
 if "user" not in st.session_state:
-    st.title("🔐 Login")
+    st.title("🏢 Gestionale C.R. Montaggi")
+    st.subheader("🔐 Accesso sistema")
 
     u = st.text_input("Username")
     p = st.text_input("Password", type="password")
@@ -47,16 +52,16 @@ if "user" not in st.session_state:
             st.session_state.user = u
             st.rerun()
         else:
-            st.error("Errore login")
+            st.error("Credenziali errate")
 
     st.stop()
 
 # =========================
-# MENU
+# SIDEBAR
 # =========================
-st.sidebar.title("📌 Menu")
+st.sidebar.title("🏢 C.R. Montaggi")
 menu = st.sidebar.radio(
-    "Seleziona",
+    "Menu",
     ["🏠 Dashboard", "👤 Clienti", "🛠 Interventi", "🔔 Notifiche"]
 )
 
@@ -64,16 +69,14 @@ if st.sidebar.button("🚪 Logout"):
     del st.session_state.user
     st.rerun()
 
-st.title("🏠 Gestionale Portoni Garage")
+st.title("🏢 Gestionale C.R. Montaggi")
 
 oggi = str(date.today())
 
 # =========================
-# DASHBOARD + ALERT OGGI
+# DASHBOARD
 # =========================
 if menu == "🏠 Dashboard":
-
-    st.subheader("📊 Riepilogo generale")
 
     c.execute("SELECT COUNT(*) FROM clienti")
     clienti = c.fetchone()[0]
@@ -81,37 +84,21 @@ if menu == "🏠 Dashboard":
     c.execute("SELECT COUNT(*) FROM interventi")
     interventi = c.fetchone()[0]
 
-    st.metric("👤 Clienti", clienti)
-    st.metric("🛠 Interventi", interventi)
+    c.execute("SELECT SUM(totale) FROM interventi")
+    guadagni = c.fetchone()[0] or 0
 
-    st.divider()
+    col1, col2, col3 = st.columns(3)
 
-    # 🔔 NOTIFICHE OGGI
-    st.subheader("🔔 Lavori di oggi")
-
-    c.execute("""
-        SELECT cliente, descrizione, stato
-        FROM interventi
-        WHERE data = ?
-    """, (oggi,))
-
-    lavori = c.fetchall()
-
-    if not lavori:
-        st.info("🎉 Nessun intervento oggi")
-    else:
-        st.warning(f"⚠️ Hai {len(lavori)} interventi oggi!")
-
-        for l in lavori:
-            if l[2] == "Da fare":
-                st.error(f"🛠 {l[0]} → {l[1]} (DA FARE)")
-            else:
-                st.success(f"✅ {l[0]} → {l[1]} (COMPLETATO)")
+    col1.metric("👤 Clienti", clienti)
+    col2.metric("🛠 Interventi", interventi)
+    col3.metric("💰 Guadagni", f"€ {guadagni}")
 
 # =========================
 # CLIENTI
 # =========================
 elif menu == "👤 Clienti":
+
+    st.subheader("Nuovo cliente")
 
     nome = st.text_input("Nome")
     tel = st.text_input("Telefono")
@@ -125,6 +112,8 @@ elif menu == "👤 Clienti":
             )
             conn.commit()
             st.success("Cliente aggiunto")
+
+    st.divider()
 
     c.execute("SELECT nome, telefono, indirizzo FROM clienti")
 
@@ -140,9 +129,10 @@ elif menu == "🛠 Interventi":
     clienti = [x[0] for x in c.fetchall()]
 
     cliente = st.selectbox("Cliente", clienti if clienti else ["Nessuno"])
-    desc = st.text_area("Descrizione")
     data = st.date_input("Data")
     stato = st.selectbox("Stato", ["Da fare", "Completato"])
+
+    desc = st.text_area("Descrizione")
 
     manodopera = st.number_input("Manodopera €", min_value=0.0)
     materiale = st.number_input("Materiale €", min_value=0.0)
@@ -162,32 +152,27 @@ elif menu == "🛠 Interventi":
         st.success("Intervento salvato")
 
 # =========================
-# NOTIFICHE DEDICATE
+# NOTIFICHE
 # =========================
 elif menu == "🔔 Notifiche":
 
-    st.subheader("🔔 Centro notifiche lavori")
+    st.subheader("🔔 Lavori di oggi")
 
     c.execute("""
-        SELECT cliente, descrizione, data, stato
+        SELECT cliente, descrizione, stato
         FROM interventi
-        ORDER BY data ASC
-    """)
+        WHERE data = ?
+    """, (oggi,))
 
     lavori = c.fetchall()
 
-    oggi_dt = date.today()
-
-    urgenti = []
-
-    for l in lavori:
-        if l[2] == oggi:
-            urgenti.append(l)
-
-    if not urgenti:
-        st.success("🎉 Nessun lavoro urgente oggi")
+    if not lavori:
+        st.success("🎉 Nessun lavoro oggi")
     else:
-        st.warning("⚠️ Lavori urgenti oggi:")
+        st.warning(f"⚠️ Hai {len(lavori)} interventi oggi")
 
-        for u in urgenti:
-            st.write(f"👤 {u[0]} | 🛠 {u[1]} | 📌 {u[3]}")
+        for l in lavori:
+            if l[2] == "Da fare":
+                st.error(f"🛠 {l[0]} → {l[1]}")
+            else:
+                st.success(f"✅ {l[0]} → {l[1]}")
