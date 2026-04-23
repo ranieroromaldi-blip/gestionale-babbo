@@ -2,6 +2,7 @@ import streamlit as st
 import sqlite3
 import hashlib
 import io
+import shutil
 from datetime import datetime
 
 from reportlab.lib.pagesizes import A4
@@ -15,6 +16,16 @@ from database import init_db, get_connection, hash_password
 init_db()
 conn = get_connection()
 c = conn.cursor()
+
+DB_FILE = "gestionale.db"
+
+# =========================
+# BACKUP FUNZIONE
+# =========================
+def crea_backup():
+    backup_name = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
+    shutil.copy(DB_FILE, backup_name)
+    return backup_name
 
 # =========================
 # LOGIN
@@ -56,7 +67,7 @@ if "user" not in st.session_state:
 st.sidebar.title("Menu")
 menu = st.sidebar.radio(
     "Sezione",
-    ["Dashboard", "Clienti", "Interventi", "Fatture"]
+    ["Dashboard", "Clienti", "Interventi", "Backup"]
 )
 
 if st.sidebar.button("Logout"):
@@ -64,36 +75,6 @@ if st.sidebar.button("Logout"):
     st.rerun()
 
 st.title("🏠 Gestionale Portoni Garage")
-
-# =========================
-# NUMERO FATTURA
-# =========================
-def get_next_invoice_number():
-    c.execute("SELECT COUNT(*) FROM fatture")
-    n = c.fetchone()[0] + 1
-    return f"FAT-{datetime.now().year}-{n:04d}"
-
-# =========================
-# PDF FATTURA
-# =========================
-def crea_fattura(numero, cliente, data, imponibile, iva, totale):
-    buffer = io.BytesIO()
-    pdf = canvas.Canvas(buffer, pagesize=A4)
-
-    pdf.setFont("Helvetica-Bold", 16)
-    pdf.drawString(50, 800, f"FATTURA {numero}")
-
-    pdf.setFont("Helvetica", 12)
-    pdf.drawString(50, 760, f"Cliente: {cliente}")
-    pdf.drawString(50, 740, f"Data: {data}")
-
-    pdf.drawString(50, 710, f"Imponibile: € {imponibile}")
-    pdf.drawString(50, 690, f"IVA (22%): € {iva}")
-    pdf.drawString(50, 670, f"TOTALE: € {totale}")
-
-    pdf.save()
-    buffer.seek(0)
-    return buffer
 
 # =========================
 # DASHBOARD
@@ -105,12 +86,8 @@ if menu == "Dashboard":
     c.execute("SELECT SUM(totale) FROM interventi")
     guadagni = c.fetchone()[0] or 0
 
-    c.execute("SELECT COUNT(*) FROM fatture")
-    fatture = c.fetchone()[0]
-
     st.metric("👤 Clienti", clienti)
     st.metric("💰 Guadagni", f"€ {guadagni}")
-    st.metric("📄 Fatture", fatture)
 
 # =========================
 # CLIENTI
@@ -158,41 +135,26 @@ elif menu == "Interventi":
         st.success("Salvato")
 
 # =========================
-# FATTURE
+# BACKUP
 # =========================
-elif menu == "Fatture":
+elif menu == "Backup":
 
-    st.subheader("📄 Genera fattura")
+    st.subheader("☁️ Backup sistema")
 
-    c.execute("SELECT nome FROM clienti")
-    clienti = [x[0] for x in c.fetchall()]
+    st.write("Crea una copia del database per sicurezza")
 
-    cliente = st.selectbox("Cliente", clienti if clienti else ["Nessuno"])
-    data = st.date_input("Data fattura")
+    if st.button("📦 Crea backup"):
+        file = crea_backup()
+        st.success("Backup creato!")
 
-    imponibile = st.number_input("Imponibile €", min_value=0.0)
+        with open(file, "rb") as f:
+            st.download_button(
+                "⬇️ Scarica backup",
+                data=f,
+                file_name=file,
+                mime="application/octet-stream"
+            )
 
-    iva = round(imponibile * 0.22, 2)
-    totale = round(imponibile + iva, 2)
+    st.divider()
 
-    st.write(f"IVA: € {iva}")
-    st.write(f"TOTALE: € {totale}")
-
-    if st.button("Genera fattura PDF"):
-        numero = get_next_invoice_number()
-
-        pdf = crea_fattura(numero, cliente, str(data), imponibile, iva, totale)
-
-        c.execute("""
-            INSERT INTO fatture (numero, cliente, data, imponibile, iva, totale)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (numero, cliente, str(data), imponibile, iva, totale))
-
-        conn.commit()
-
-        st.download_button(
-            "Scarica PDF",
-            data=pdf,
-            file_name=f"{numero}.pdf",
-            mime="application/pdf"
-        )
+    st.info("Consiglio: fai backup almeno 1 volta a settimana")
