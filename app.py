@@ -2,7 +2,6 @@ import streamlit as st
 import sqlite3
 import hashlib
 import io
-import shutil
 from datetime import datetime
 
 from reportlab.lib.pagesizes import A4
@@ -11,21 +10,16 @@ from reportlab.pdfgen import canvas
 from database import init_db, get_connection, hash_password
 
 # =========================
+# CONFIG UI
+# =========================
+st.set_page_config(page_title="Gestionale Portoni", layout="wide")
+
+# =========================
 # DB
 # =========================
 init_db()
 conn = get_connection()
 c = conn.cursor()
-
-DB_FILE = "gestionale.db"
-
-# =========================
-# BACKUP FUNZIONE
-# =========================
-def crea_backup():
-    backup_name = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.db"
-    shutil.copy(DB_FILE, backup_name)
-    return backup_name
 
 # =========================
 # LOGIN
@@ -46,7 +40,7 @@ if not c.fetchone():
     conn.commit()
 
 if "user" not in st.session_state:
-    st.title("🔐 Login")
+    st.title("🔐 Login Gestionale")
 
     u = st.text_input("Username")
     p = st.text_input("Password", type="password")
@@ -62,43 +56,65 @@ if "user" not in st.session_state:
     st.stop()
 
 # =========================
-# MENU
+# SIDEBAR
 # =========================
-st.sidebar.title("Menu")
+st.sidebar.title("📌 Menu")
 menu = st.sidebar.radio(
-    "Sezione",
-    ["Dashboard", "Clienti", "Interventi", "Backup"]
+    "Seleziona",
+    ["🏠 Dashboard", "👤 Clienti", "🛠 Interventi", "💰 Guadagni"]
 )
 
-if st.sidebar.button("Logout"):
+if st.sidebar.button("🚪 Logout"):
     del st.session_state.user
     st.rerun()
 
 st.title("🏠 Gestionale Portoni Garage")
 
 # =========================
-# DASHBOARD
+# DASHBOARD (CARDS)
 # =========================
-if menu == "Dashboard":
+if menu == "🏠 Dashboard":
+
     c.execute("SELECT COUNT(*) FROM clienti")
     clienti = c.fetchone()[0]
+
+    c.execute("SELECT COUNT(*) FROM interventi")
+    interventi = c.fetchone()[0]
 
     c.execute("SELECT SUM(totale) FROM interventi")
     guadagni = c.fetchone()[0] or 0
 
-    st.metric("👤 Clienti", clienti)
-    st.metric("💰 Guadagni", f"€ {guadagni}")
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.metric("👤 Clienti", clienti)
+
+    with col2:
+        st.metric("🛠 Interventi", interventi)
+
+    with col3:
+        st.metric("💰 Guadagni", f"€ {guadagni}")
 
 # =========================
-# CLIENTI
+# CLIENTI (CARDS)
 # =========================
-elif menu == "Clienti":
+elif menu == "👤 Clienti":
 
-    nome = st.text_input("Nome")
-    tel = st.text_input("Telefono")
-    indirizzo = st.text_input("Indirizzo")
+    st.subheader("Nuovo cliente")
 
-    if st.button("Aggiungi"):
+    with st.container():
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            nome = st.text_input("Nome")
+
+        with col2:
+            tel = st.text_input("Telefono")
+
+        with col3:
+            indirizzo = st.text_input("Indirizzo")
+
+    if st.button("➕ Aggiungi cliente"):
         if nome:
             c.execute(
                 "INSERT INTO clienti (nome, telefono, indirizzo) VALUES (?, ?, ?)",
@@ -107,54 +123,76 @@ elif menu == "Clienti":
             conn.commit()
             st.success("Cliente aggiunto")
 
+    st.divider()
+
+    c.execute("SELECT nome, telefono, indirizzo FROM clienti")
+
+    for cl in c.fetchall():
+        st.info(f"👤 **{cl[0]}** | 📞 {cl[1]} | 📍 {cl[2]}")
+
 # =========================
-# INTERVENTI
+# INTERVENTI (CARDS)
 # =========================
-elif menu == "Interventi":
+elif menu == "🛠 Interventi":
 
     c.execute("SELECT nome FROM clienti")
     clienti = [x[0] for x in c.fetchall()]
 
-    cliente = st.selectbox("Cliente", clienti if clienti else ["Nessuno"])
-    desc = st.text_area("Descrizione")
-    data = st.date_input("Data")
+    st.subheader("Nuovo intervento")
 
-    manodopera = st.number_input("Manodopera €", min_value=0.0)
-    materiale = st.number_input("Materiale €", min_value=0.0)
+    col1, col2 = st.columns(2)
+
+    with col1:
+        cliente = st.selectbox("Cliente", clienti if clienti else ["Nessuno"])
+        data = st.date_input("Data")
+
+    with col2:
+        stato = st.selectbox("Stato", ["Da fare", "Completato"])
+
+    desc = st.text_area("Descrizione")
+
+    col3, col4 = st.columns(2)
+
+    with col3:
+        manodopera = st.number_input("Manodopera €", min_value=0.0)
+
+    with col4:
+        materiale = st.number_input("Materiale €", min_value=0.0)
 
     totale = manodopera + materiale
 
-    if st.button("Salva intervento"):
+    st.success(f"💰 Totale intervento: € {totale}")
+
+    if st.button("💾 Salva intervento"):
         c.execute("""
             INSERT INTO interventi 
             (cliente, descrizione, data, stato, manodopera, materiale, totale)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (cliente, desc, str(data), "Completato", manodopera, materiale, totale))
+        """, (cliente, desc, str(data), stato, manodopera, materiale, totale))
 
         conn.commit()
-        st.success("Salvato")
+        st.success("Intervento salvato")
 
 # =========================
-# BACKUP
+# GUADAGNI (SIMPLE DASHBOARD)
 # =========================
-elif menu == "Backup":
+elif menu == "💰 Guadagni":
 
-    st.subheader("☁️ Backup sistema")
+    st.subheader("📊 Riepilogo guadagni")
 
-    st.write("Crea una copia del database per sicurezza")
+    c.execute("SELECT SUM(totale) FROM interventi WHERE stato='Completato'")
+    tot = c.fetchone()[0] or 0
 
-    if st.button("📦 Crea backup"):
-        file = crea_backup()
-        st.success("Backup creato!")
-
-        with open(file, "rb") as f:
-            st.download_button(
-                "⬇️ Scarica backup",
-                data=f,
-                file_name=file,
-                mime="application/octet-stream"
-            )
+    st.metric("💰 Totale incassato", f"€ {tot}")
 
     st.divider()
 
-    st.info("Consiglio: fai backup almeno 1 volta a settimana")
+    c.execute("""
+        SELECT cliente, data, totale
+        FROM interventi
+        WHERE stato='Completato'
+        ORDER BY data DESC
+    """)
+
+    for i in c.fetchall():
+        st.success(f"📅 {i[1]} | 👤 {i[0]} | € {i[2]}")
