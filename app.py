@@ -2,13 +2,15 @@ import streamlit as st
 import sqlite3
 import io
 import hashlib
+from datetime import datetime
+
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
 from database import init_db, get_connection, hash_password
 
 # =========================
-# INIT DB
+# DB
 # =========================
 init_db()
 conn = get_connection()
@@ -35,13 +37,13 @@ if not c.fetchone():
 if "user" not in st.session_state:
     st.title("🔐 Login")
 
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+    u = st.text_input("Username")
+    p = st.text_input("Password", type="password")
 
     if st.button("Login"):
-        user = login_user(username, password)
+        user = login_user(u, p)
         if user:
-            st.session_state.user = username
+            st.session_state.user = u
             st.rerun()
         else:
             st.error("Errore login")
@@ -52,49 +54,22 @@ if "user" not in st.session_state:
 # MENU
 # =========================
 st.sidebar.title("Menu")
-st.sidebar.write(f"👤 {st.session_state.user}")
-
 menu = st.sidebar.radio(
     "Sezione",
-    ["Dashboard", "Clienti", "Interventi", "Fatture"]
+    ["Dashboard", "Clienti", "Interventi", "Statistiche"]
 )
 
 if st.sidebar.button("Logout"):
     del st.session_state.user
     st.rerun()
 
-# =========================
-# PDF FATTURA
-# =========================
-def crea_fattura(cliente, descrizione, data, manodopera, materiale, totale):
-    buffer = io.BytesIO()
-    pdf = canvas.Canvas(buffer, pagesize=A4)
-
-    pdf.setFont("Helvetica-Bold", 16)
-    pdf.drawString(50, 800, "FATTURA INTERVENTO PORTONI")
-
-    pdf.setFont("Helvetica", 12)
-    pdf.drawString(50, 760, f"Cliente: {cliente}")
-    pdf.drawString(50, 740, f"Data: {data}")
-
-    pdf.drawString(50, 710, f"Manodopera: € {manodopera}")
-    pdf.drawString(50, 690, f"Materiale: € {materiale}")
-    pdf.drawString(50, 670, f"TOTALE: € {totale}")
-
-    pdf.drawString(50, 640, "Descrizione:")
-    text = pdf.beginText(50, 620)
-    text.textLines(descrizione)
-    pdf.drawText(text)
-
-    pdf.save()
-    buffer.seek(0)
-    return buffer
+st.title("🏠 Gestionale Portoni")
 
 # =========================
-# DASHBOARD
+# DASHBOARD STATISTICHE
 # =========================
 if menu == "Dashboard":
-    st.title("📊 Dashboard")
+    st.subheader("📊 Riepilogo generale")
 
     c.execute("SELECT COUNT(*) FROM clienti")
     clienti = c.fetchone()[0]
@@ -102,20 +77,24 @@ if menu == "Dashboard":
     c.execute("SELECT COUNT(*) FROM interventi")
     interventi = c.fetchone()[0]
 
+    c.execute("SELECT COUNT(*) FROM interventi WHERE stato='Completato'")
+    completati = c.fetchone()[0]
+
     st.write(f"👤 Clienti: {clienti}")
-    st.write(f"🛠 Interventi: {interventi}")
+    st.write(f"🛠 Interventi totali: {interventi}")
+    st.write(f"✅ Completati: {completati}")
 
 # =========================
 # CLIENTI
 # =========================
 elif menu == "Clienti":
-    st.title("👤 Clienti")
+    st.subheader("👤 Clienti")
 
     nome = st.text_input("Nome")
     tel = st.text_input("Telefono")
     indirizzo = st.text_input("Indirizzo")
 
-    if st.button("Aggiungi"):
+    if st.button("Aggiungi cliente"):
         if nome:
             c.execute(
                 "INSERT INTO clienti (nome, telefono, indirizzo) VALUES (?, ?, ?)",
@@ -133,7 +112,7 @@ elif menu == "Clienti":
 # INTERVENTI
 # =========================
 elif menu == "Interventi":
-    st.title("🛠 Interventi")
+    st.subheader("🛠 Interventi")
 
     c.execute("SELECT nome FROM clienti")
     clienti = [x[0] for x in c.fetchall()]
@@ -141,48 +120,34 @@ elif menu == "Interventi":
     cliente = st.selectbox("Cliente", clienti if clienti else ["Nessuno"])
     desc = st.text_area("Descrizione")
     data = st.date_input("Data")
-
-    manodopera = st.number_input("Costo manodopera", min_value=0.0)
-    materiale = st.number_input("Costo materiale", min_value=0.0)
-
-    totale = manodopera + materiale
-
-    st.write(f"💰 Totale: € {totale}")
+    stato = st.selectbox("Stato", ["Da fare", "Completato"])
 
     if st.button("Salva intervento"):
         c.execute(
             "INSERT INTO interventi (cliente, descrizione, data, stato) VALUES (?, ?, ?, ?)",
-            (cliente, desc, str(data), "Da fare")
+            (cliente, desc, str(data), stato)
         )
         conn.commit()
         st.success("Salvato")
 
 # =========================
-# FATTURE
+# STATISTICHE GUADAGNI
 # =========================
-elif menu == "Fatture":
-    st.title("💰 Fatture")
+elif menu == "Statistiche":
+    st.subheader("💰 Guadagni")
 
-    c.execute("SELECT nome FROM clienti")
-    clienti = [x[0] for x in c.fetchall()]
+    # prendiamo tutte le fatture simulate (manodopera + materiale)
+    c.execute("SELECT data FROM interventi")
+    date = c.fetchall()
 
-    cliente = st.selectbox("Cliente", clienti if clienti else ["Nessuno"])
-    descrizione = st.text_area("Descrizione lavoro")
-    data = st.date_input("Data")
+    oggi = datetime.now().month
+    anno = datetime.now().year
 
-    manodopera = st.number_input("Manodopera €", min_value=0.0)
-    materiale = st.number_input("Materiale €", min_value=0.0)
+    # simulazione semplice: NON abbiamo ancora prezzi salvati nei DB interventi,
+    # quindi usiamo esempio base (step successivo li colleghiamo davvero)
+    st.info("📌 (Versione base: statistiche saranno complete nel prossimo step)")
 
-    totale = manodopera + materiale
+    c.execute("SELECT COUNT(*) FROM interventi WHERE stato='Completato'")
+    completati = c.fetchone()[0]
 
-    st.write(f"💰 Totale: € {totale}")
-
-    if st.button("Genera Fattura PDF"):
-        pdf = crea_fattura(cliente, descrizione, str(data), manodopera, materiale, totale)
-
-        st.download_button(
-            "Scarica PDF",
-            data=pdf,
-            file_name="fattura.pdf",
-            mime="application/pdf"
-        )
+    st.write(f"💰 Interventi completati: {completati}")
