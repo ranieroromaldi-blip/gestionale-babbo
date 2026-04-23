@@ -1,7 +1,11 @@
 import streamlit as st
 import sqlite3
 import hashlib
-from datetime import datetime, date
+import io
+from datetime import datetime
+
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
 
 from database import init_db, get_connection, hash_password
 
@@ -52,7 +56,7 @@ if "user" not in st.session_state:
 st.sidebar.title("Menu")
 menu = st.sidebar.radio(
     "Sezione",
-    ["Dashboard", "Clienti", "Interventi", "Calendario"]
+    ["Dashboard", "Clienti", "Interventi", "Fatture"]
 )
 
 if st.sidebar.button("Logout"):
@@ -62,21 +66,51 @@ if st.sidebar.button("Logout"):
 st.title("🏠 Gestionale Portoni Garage")
 
 # =========================
+# NUMERO FATTURA
+# =========================
+def get_next_invoice_number():
+    c.execute("SELECT COUNT(*) FROM fatture")
+    n = c.fetchone()[0] + 1
+    return f"FAT-{datetime.now().year}-{n:04d}"
+
+# =========================
+# PDF FATTURA
+# =========================
+def crea_fattura(numero, cliente, data, imponibile, iva, totale):
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=A4)
+
+    pdf.setFont("Helvetica-Bold", 16)
+    pdf.drawString(50, 800, f"FATTURA {numero}")
+
+    pdf.setFont("Helvetica", 12)
+    pdf.drawString(50, 760, f"Cliente: {cliente}")
+    pdf.drawString(50, 740, f"Data: {data}")
+
+    pdf.drawString(50, 710, f"Imponibile: € {imponibile}")
+    pdf.drawString(50, 690, f"IVA (22%): € {iva}")
+    pdf.drawString(50, 670, f"TOTALE: € {totale}")
+
+    pdf.save()
+    buffer.seek(0)
+    return buffer
+
+# =========================
 # DASHBOARD
 # =========================
 if menu == "Dashboard":
     c.execute("SELECT COUNT(*) FROM clienti")
     clienti = c.fetchone()[0]
 
-    c.execute("SELECT COUNT(*) FROM interventi")
-    interventi = c.fetchone()[0]
-
-    c.execute("SELECT SUM(totale) FROM interventi WHERE stato='Completato'")
+    c.execute("SELECT SUM(totale) FROM interventi")
     guadagni = c.fetchone()[0] or 0
 
+    c.execute("SELECT COUNT(*) FROM fatture")
+    fatture = c.fetchone()[0]
+
     st.metric("👤 Clienti", clienti)
-    st.metric("🛠 Interventi", interventi)
     st.metric("💰 Guadagni", f"€ {guadagni}")
+    st.metric("📄 Fatture", fatture)
 
 # =========================
 # CLIENTI
@@ -87,7 +121,7 @@ elif menu == "Clienti":
     tel = st.text_input("Telefono")
     indirizzo = st.text_input("Indirizzo")
 
-    if st.button("Aggiungi cliente"):
+    if st.button("Aggiungi"):
         if nome:
             c.execute(
                 "INSERT INTO clienti (nome, telefono, indirizzo) VALUES (?, ?, ?)",
@@ -95,11 +129,6 @@ elif menu == "Clienti":
             )
             conn.commit()
             st.success("Cliente aggiunto")
-
-    c.execute("SELECT nome, telefono, indirizzo FROM clienti")
-
-    for cl in c.fetchall():
-        st.write(f"{cl[0]} - {cl[1]} - {cl[2]}")
 
 # =========================
 # INTERVENTI
@@ -111,8 +140,7 @@ elif menu == "Interventi":
 
     cliente = st.selectbox("Cliente", clienti if clienti else ["Nessuno"])
     desc = st.text_area("Descrizione")
-    data = st.date_input("Data intervento")
-    stato = st.selectbox("Stato", ["Da fare", "Completato"])
+    data = st.date_input("Data")
 
     manodopera = st.number_input("Manodopera €", min_value=0.0)
     materiale = st.number_input("Materiale €", min_value=0.0)
@@ -124,57 +152,47 @@ elif menu == "Interventi":
             INSERT INTO interventi 
             (cliente, descrizione, data, stato, manodopera, materiale, totale)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (cliente, desc, str(data), stato, manodopera, materiale, totale))
+        """, (cliente, desc, str(data), "Completato", manodopera, materiale, totale))
 
         conn.commit()
         st.success("Salvato")
 
 # =========================
-# CALENDARIO LAVORI
+# FATTURE
 # =========================
-elif menu == "Calendario":
+elif menu == "Fatture":
 
-    st.subheader("📅 Calendario lavori")
+    st.subheader("📄 Genera fattura")
 
-    oggi = date.today()
+    c.execute("SELECT nome FROM clienti")
+    clienti = [x[0] for x in c.fetchall()]
 
-    tab1, tab2, tab3 = st.tabs(["📍 Oggi", "📆 Prossimi lavori", "📋 Tutti"])
+    cliente = st.selectbox("Cliente", clienti if clienti else ["Nessuno"])
+    data = st.date_input("Data fattura")
 
-    # ================= OGGI =================
-    with tab1:
+    imponibile = st.number_input("Imponibile €", min_value=0.0)
+
+    iva = round(imponibile * 0.22, 2)
+    totale = round(imponibile + iva, 2)
+
+    st.write(f"IVA: € {iva}")
+    st.write(f"TOTALE: € {totale}")
+
+    if st.button("Genera fattura PDF"):
+        numero = get_next_invoice_number()
+
+        pdf = crea_fattura(numero, cliente, str(data), imponibile, iva, totale)
+
         c.execute("""
-            SELECT cliente, descrizione, data, stato
-            FROM interventi
-            WHERE data = ?
-        """, (str(oggi),))
+            INSERT INTO fatture (numero, cliente, data, imponibile, iva, totale)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (numero, cliente, str(data), imponibile, iva, totale))
 
-        lavori = c.fetchall()
+        conn.commit()
 
-        if not lavori:
-            st.info("Nessun lavoro oggi")
-        else:
-            for l in lavori:
-                st.write(f"👤 {l[0]} | 🛠 {l[1]} | 📌 {l[3]}")
-
-    # ================= PROSSIMI =================
-    with tab2:
-        c.execute("""
-            SELECT cliente, descrizione, data, stato
-            FROM interventi
-            WHERE data > ?
-            ORDER BY data ASC
-        """, (str(oggi),))
-
-        for l in c.fetchall():
-            st.write(f"📅 {l[2]} | 👤 {l[0]} | 🛠 {l[1]} | 📌 {l[3]}")
-
-    # ================= TUTTI =================
-    with tab3:
-        c.execute("""
-            SELECT cliente, descrizione, data, stato
-            FROM interventi
-            ORDER BY data DESC
-        """)
-
-        for l in c.fetchall():
-            st.write(f"{l[2]} | {l[0]} | {l[1]} | {l[3]}")
+        st.download_button(
+            "Scarica PDF",
+            data=pdf,
+            file_name=f"{numero}.pdf",
+            mime="application/pdf"
+        )
