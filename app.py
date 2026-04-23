@@ -56,20 +56,20 @@ if "user" not in st.session_state:
 st.sidebar.title("Menu")
 menu = st.sidebar.radio(
     "Sezione",
-    ["Dashboard", "Clienti", "Interventi", "Statistiche"]
+    ["Dashboard", "Clienti", "Interventi", "Guadagni"]
 )
 
 if st.sidebar.button("Logout"):
     del st.session_state.user
     st.rerun()
 
-st.title("🏠 Gestionale Portoni")
+st.title("🏠 Gestionale Portoni Garage")
 
 # =========================
-# DASHBOARD STATISTICHE
+# DASHBOARD
 # =========================
 if menu == "Dashboard":
-    st.subheader("📊 Riepilogo generale")
+    st.subheader("📊 Riepilogo")
 
     c.execute("SELECT COUNT(*) FROM clienti")
     clienti = c.fetchone()[0]
@@ -81,7 +81,7 @@ if menu == "Dashboard":
     completati = c.fetchone()[0]
 
     st.write(f"👤 Clienti: {clienti}")
-    st.write(f"🛠 Interventi totali: {interventi}")
+    st.write(f"🛠 Interventi: {interventi}")
     st.write(f"✅ Completati: {completati}")
 
 # =========================
@@ -109,7 +109,7 @@ elif menu == "Clienti":
         st.write(f"{cl[0]} - {cl[1]} - {cl[2]}")
 
 # =========================
-# INTERVENTI
+# INTERVENTI (CON SOLDI)
 # =========================
 elif menu == "Interventi":
     st.subheader("🛠 Interventi")
@@ -122,32 +122,33 @@ elif menu == "Interventi":
     data = st.date_input("Data")
     stato = st.selectbox("Stato", ["Da fare", "Completato"])
 
+    manodopera = st.number_input("💰 Manodopera (€)", min_value=0.0)
+    materiale = st.number_input("🧱 Materiale (€)", min_value=0.0)
+
+    totale = manodopera + materiale
+    st.write(f"👉 Totale intervento: € {totale}")
+
     if st.button("Salva intervento"):
-        c.execute(
-            "INSERT INTO interventi (cliente, descrizione, data, stato) VALUES (?, ?, ?, ?)",
-            (cliente, desc, str(data), stato)
-        )
+        c.execute("""
+            INSERT INTO interventi (cliente, descrizione, data, stato)
+            VALUES (?, ?, ?, ?)
+        """, (cliente, desc, str(data), stato))
+
         conn.commit()
-        st.success("Salvato")
+        st.success("Intervento salvato")
 
 # =========================
-# STATISTICHE GUADAGNI
+# GUADAGNI REALI
 # =========================
-elif menu == "Statistiche":
-    st.subheader("💰 Guadagni")
+elif menu == "Guadagni":
+    st.subheader("💰 Guadagni reali")
 
-    # prendiamo tutte le fatture simulate (manodopera + materiale)
-    c.execute("SELECT data FROM interventi")
-    date = c.fetchall()
-
-    oggi = datetime.now().month
-    anno = datetime.now().year
-
-    # simulazione semplice: NON abbiamo ancora prezzi salvati nei DB interventi,
-    # quindi usiamo esempio base (step successivo li colleghiamo davvero)
-    st.info("📌 (Versione base: statistiche saranno complete nel prossimo step)")
+    # NOTA: versione base → simuliamo struttura
+    # (prossimo step: salviamo soldi nel DB interventi)
 
     c.execute("SELECT COUNT(*) FROM interventi WHERE stato='Completato'")
     completati = c.fetchone()[0]
 
-    st.write(f"💰 Interventi completati: {completati}")
+    st.metric("Interventi completati", completati)
+
+    st.info("Nel prossimo step colleghiamo i prezzi al database per avere guadagni reali mensili.")
