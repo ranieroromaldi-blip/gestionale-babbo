@@ -1,44 +1,72 @@
 import streamlit as st
 import sqlite3
 import io
+import hashlib
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 
+from database import init_db, get_connection, hash_password
+
 # =========================
-# DATABASE
+# INIT DB
 # =========================
-def get_connection():
-    return sqlite3.connect("gestionale.db", check_same_thread=False)
-
-def init_db():
-    conn = get_connection()
-    c = conn.cursor()
-
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS clienti (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome TEXT,
-        telefono TEXT,
-        indirizzo TEXT
-    )
-    """)
-
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS interventi (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        cliente TEXT,
-        descrizione TEXT,
-        data TEXT,
-        stato TEXT
-    )
-    """)
-
-    conn.commit()
-    conn.close()
-
 init_db()
 conn = get_connection()
 c = conn.cursor()
+
+# =========================
+# LOGIN FUNCTIONS
+# =========================
+def login_user(username, password):
+    c.execute(
+        "SELECT * FROM utenti WHERE username=? AND password=?",
+        (username, hash_password(password))
+    )
+    return c.fetchone()
+
+# =========================
+# CREATE DEFAULT USER (solo 1 volta)
+# =========================
+c.execute("SELECT * FROM utenti WHERE username='admin'")
+if not c.fetchone():
+    c.execute(
+        "INSERT INTO utenti (username, password) VALUES (?, ?)",
+        ("admin", hash_password("1234"))
+    )
+    conn.commit()
+
+# =========================
+# LOGIN PAGE
+# =========================
+if "user" not in st.session_state:
+
+    st.title("🔐 Login Gestionale Portoni")
+
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+
+    if st.button("Login"):
+        user = login_user(username, password)
+
+        if user:
+            st.session_state.user = username
+            st.success("Login effettuato!")
+            st.rerun()
+        else:
+            st.error("Credenziali errate")
+
+    st.stop()
+
+# =========================
+# LOGGED IN HEADER
+# =========================
+st.sidebar.write(f"👤 Utente: {st.session_state.user}")
+
+if st.sidebar.button("Logout"):
+    del st.session_state.user
+    st.rerun()
+
+st.title("🏠 Gestionale Portoni Garage")
 
 # =========================
 # PDF FUNCTION
@@ -54,7 +82,7 @@ def crea_pdf(cliente, descrizione, data):
     pdf.drawString(50, 760, f"Cliente: {cliente}")
     pdf.drawString(50, 740, f"Data: {data}")
 
-    pdf.drawString(50, 710, "Descrizione lavoro:")
+    pdf.drawString(50, 710, "Descrizione:")
     text = pdf.beginText(50, 690)
     text.textLines(descrizione)
     pdf.drawText(text)
@@ -62,11 +90,6 @@ def crea_pdf(cliente, descrizione, data):
     pdf.save()
     buffer.seek(0)
     return buffer
-
-# =========================
-# UI
-# =========================
-st.title("🏠 Gestionale Portoni Garage")
 
 # =========================
 # CLIENTI
@@ -146,7 +169,7 @@ for a in agenda:
     st.write(f"📅 {a[2]} - 👤 {a[0]} - 🛠 {a[1]} - 📌 {a[3]}")
 
 # =========================
-# PDF PREVENTIVO
+# PDF
 # =========================
 st.header("📄 Preventivo PDF")
 
