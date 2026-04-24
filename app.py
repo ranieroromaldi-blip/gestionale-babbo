@@ -134,12 +134,47 @@ elif menu == "👤 Clienti":
             )
             conn.commit()
             st.success("Cliente aggiunto")
+            st.experimental_rerun()
 
     st.divider()
     st.subheader("📋 Clienti registrati")
-    c.execute("SELECT nome, telefono, indirizzo FROM clienti")
-    for cl in c.fetchall():
-        st.info(f"👤 {cl[0]} | 📞 {cl[1]} | 📍 {cl[2]}")
+    c.execute("SELECT id, nome, telefono, indirizzo FROM clienti")
+    clienti = c.fetchall()
+
+    if clienti:
+        for cl in clienti:
+            st.info(f"👤 {cl[1]} | 📞 {cl[2]} | 📍 {cl[3]}")
+            col1, col2 = st.columns([1,1])
+            with col1:
+                if st.button(f"✏️ Modifica {cl[0]}", key=f"mod_client_{cl[0]}"):
+                    st.session_state.modifica_cliente_id = cl[0]
+                    st.session_state.modifica_cliente = True
+            with col2:
+                if st.button(f"❌ Cancella {cl[0]}", key=f"del_client_{cl[0]}"):
+                    c.execute("DELETE FROM clienti WHERE id=?", (cl[0],))
+                    conn.commit()
+                    st.success("Cliente cancellato")
+                    st.experimental_rerun()
+
+    # =========================
+    # MODIFICA CLIENTE
+    # =========================
+    if st.session_state.get("modifica_cliente", False):
+        c.execute("SELECT nome, telefono, indirizzo FROM clienti WHERE id=?",
+                  (st.session_state.modifica_cliente_id,))
+        cl = c.fetchone()
+        st.subheader("✏️ Modifica Cliente")
+        nome = st.text_input("Nome", value=cl[0])
+        tel = st.text_input("Telefono", value=cl[1])
+        indirizzo = st.text_input("Indirizzo", value=cl[2])
+        if st.button("💾 Salva modifiche cliente"):
+            c.execute("""
+                UPDATE clienti SET nome=?, telefono=?, indirizzo=? WHERE id=?
+            """, (nome, tel, indirizzo, st.session_state.modifica_cliente_id))
+            conn.commit()
+            st.success("Cliente aggiornato")
+            st.session_state.modifica_cliente = False
+            st.experimental_rerun()
 
 # =========================
 # INTERVENTI
