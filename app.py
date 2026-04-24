@@ -5,19 +5,46 @@ from datetime import date
 import io
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-from database import init_db, get_connection, hash_password
 
 # =========================
-# CONFIG APP
+# DATABASE
 # =========================
-st.set_page_config(
-    page_title="Gestionale C.R. Montaggi",
-    page_icon="🏢",
-    layout="wide"
-)
+def init_db():
+    conn = sqlite3.connect("gestionale.db")
+    c = conn.cursor()
+    # Tabelle
+    c.execute("""CREATE TABLE IF NOT EXISTS clienti (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nome TEXT,
+                    telefono TEXT,
+                    indirizzo TEXT
+                )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS interventi (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    cliente TEXT,
+                    descrizione TEXT,
+                    data TEXT,
+                    stato TEXT,
+                    manodopera REAL,
+                    materiale REAL,
+                    totale REAL
+                )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS utenti (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT,
+                    password TEXT
+                )""")
+    conn.commit()
+    conn.close()
+
+def get_connection():
+    return sqlite3.connect("gestionale.db")
+
+def hash_password(pwd):
+    return hashlib.sha256(pwd.encode()).hexdigest()
 
 # =========================
-# DB
+# INIT DB
 # =========================
 init_db()
 conn = get_connection()
@@ -112,7 +139,7 @@ elif menu == "👤 Clienti":
     st.subheader("📋 Clienti registrati")
     c.execute("SELECT nome, telefono, indirizzo FROM clienti")
     for cl in c.fetchall():
-        st.info(f"👤 **{cl[0]}** | 📞 {cl[1]} | 📍 {cl[2]}")
+        st.info(f"👤 {cl[0]} | 📞 {cl[1]} | 📍 {cl[2]}")
 
 # =========================
 # INTERVENTI
@@ -157,6 +184,7 @@ elif menu == "📋 Lista Interventi":
                 f"👤 {iv[1]} | 🛠 {iv[2]} | 📅 {iv[3]} | Stato: {iv[4]} | "
                 f"Manodopera: € {iv[5]} | Materiale: € {iv[6]} | Totale: € {iv[7]}"
             )
+
             # Bottone PDF
             buffer = io.BytesIO()
             c_pdf = canvas.Canvas(buffer, pagesize=A4)
