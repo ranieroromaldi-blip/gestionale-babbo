@@ -184,30 +184,69 @@ elif menu == "📋 Lista Interventi":
                 f"👤 {iv[1]} | 🛠 {iv[2]} | 📅 {iv[3]} | Stato: {iv[4]} | "
                 f"Manodopera: € {iv[5]} | Materiale: € {iv[6]} | Totale: € {iv[7]}"
             )
+            col1, col2, col3 = st.columns([1,1,3])
+            
+            with col1:
+                if st.button(f"✏️ Modifica {iv[0]}", key=f"mod_{iv[0]}"):
+                    st.session_state.modifica_id = iv[0]
+                    st.session_state.modifica = True
+            with col2:
+                if st.button(f"❌ Cancella {iv[0]}", key=f"del_{iv[0]}"):
+                    c.execute("DELETE FROM interventi WHERE id=?", (iv[0],))
+                    conn.commit()
+                    st.success("Intervento cancellato")
+                    st.experimental_rerun()
+            with col3:
+                buffer = io.BytesIO()
+                c_pdf = canvas.Canvas(buffer, pagesize=A4)
+                c_pdf.setFont("Helvetica-Bold", 16)
+                c_pdf.drawString(50, 800, "Preventivo Intervento")
+                c_pdf.setFont("Helvetica", 12)
+                c_pdf.drawString(50, 770, f"Cliente: {iv[1]}")
+                c_pdf.drawString(50, 750, f"Data: {iv[3]}")
+                c_pdf.drawString(50, 730, f"Descrizione: {iv[2]}")
+                c_pdf.drawString(50, 710, f"Manodopera: € {iv[5]}")
+                c_pdf.drawString(50, 690, f"Materiale: € {iv[6]}")
+                c_pdf.drawString(50, 670, f"Totale: € {iv[7]}")
+                c_pdf.showPage()
+                c_pdf.save()
+                buffer.seek(0)
+                st.download_button(
+                    label="🖨 Scarica PDF",
+                    data=buffer,
+                    file_name=f"Preventivo_{iv[1]}_{iv[3]}.pdf",
+                    mime="application/pdf",
+                    key=f"pdf_{iv[0]}"
+                )
 
-            # Bottone PDF
-            buffer = io.BytesIO()
-            c_pdf = canvas.Canvas(buffer, pagesize=A4)
-            c_pdf.setFont("Helvetica-Bold", 16)
-            c_pdf.drawString(50, 800, "Preventivo Intervento")
-            c_pdf.setFont("Helvetica", 12)
-            c_pdf.drawString(50, 770, f"Cliente: {iv[1]}")
-            c_pdf.drawString(50, 750, f"Data: {iv[3]}")
-            c_pdf.drawString(50, 730, f"Descrizione: {iv[2]}")
-            c_pdf.drawString(50, 710, f"Manodopera: € {iv[5]}")
-            c_pdf.drawString(50, 690, f"Materiale: € {iv[6]}")
-            c_pdf.drawString(50, 670, f"Totale: € {iv[7]}")
-            c_pdf.showPage()
-            c_pdf.save()
-            buffer.seek(0)
-            st.download_button(
-                label="🖨 Scarica PDF",
-                data=buffer,
-                file_name=f"Preventivo_{iv[1]}_{iv[3]}.pdf",
-                mime="application/pdf"
-            )
     else:
         st.warning("Nessun intervento registrato")
+
+    # =========================
+    # MODIFICA INTERVENTO
+    # =========================
+    if st.session_state.get("modifica", False):
+        c.execute("SELECT cliente, descrizione, data, stato, manodopera, materiale FROM interventi WHERE id=?",
+                  (st.session_state.modifica_id,))
+        iv = c.fetchone()
+        st.subheader("✏️ Modifica Intervento")
+        cliente = st.text_input("Cliente", value=iv[0])
+        descrizione = st.text_area("Descrizione", value=iv[1])
+        data = st.date_input("Data", value=date.fromisoformat(iv[2]))
+        stato = st.selectbox("Stato", ["Da fare", "Completato"], index=0 if iv[3]=="Da fare" else 1)
+        manodopera = st.number_input("Manodopera €", value=iv[4])
+        materiale = st.number_input("Materiale €", value=iv[5])
+        totale = manodopera + materiale
+        st.success(f"💰 Totale: € {totale}")
+        if st.button("💾 Salva modifiche"):
+            c.execute("""
+                UPDATE interventi SET cliente=?, descrizione=?, data=?, stato=?, manodopera=?, materiale=?, totale=?
+                WHERE id=?
+            """, (cliente, descrizione, str(data), stato, manodopera, materiale, totale, st.session_state.modifica_id))
+            conn.commit()
+            st.success("Intervento aggiornato")
+            st.session_state.modifica = False
+            st.experimental_rerun()
 
 # =========================
 # NOTIFICHE
